@@ -1,0 +1,1 @@
+export async function verifyWebsite(url:string){ if(!url) return {reachable:false,status:0,https:false}; try { const u=new URL(url); const r=await fetch(u,{redirect:'follow',signal:AbortSignal.timeout(7000)}); return {reachable:r.ok,status:r.status,https:u.protocol==='https:',finalUrl:r.url}; } catch { return {reachable:false,status:0,https:url.startsWith('https://')}; } }
