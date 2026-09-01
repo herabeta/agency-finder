@@ -1,0 +1,5 @@
+export const NIGERIA_LOCATIONS = {
+  Abia: ['Aba','Umuahia'], Adamawa: ['Yola','Mubi'], 'Akwa Ibom': ['Uyo','Eket'], Anambra: ['Awka','Onitsha','Nnewi'], Bauchi: ['Bauchi','Azare'], Bayelsa: ['Yenagoa'], Benue: ['Makurdi','Gboko'], Borno: ['Maiduguri'], 'Cross River': ['Calabar','Ogoja'], Delta: ['Asaba','Warri','Sapele'], Ebonyi: ['Abakaliki'], Edo: ['Benin City','Auchi'], Ekiti: ['Ado-Ekiti'], Enugu: ['Enugu'], Gombe: ['Gombe'], Imo: ['Owerri','Orlu'], Jigawa: ['Dutse','Hadejia'], Kaduna: ['Kaduna','Zaria'], Kano: ['Kano'], Katsina: ['Katsina'], Kebbi: ['Birnin Kebbi'], Kogi: ['Lokoja','Okene'], Kwara: ['Ilorin'], Lagos: ['Lagos','Ikeja','Lekki'], Nasarawa: ['Lafia','Keffi'], Niger: ['Minna','Suleja'], Ogun: ['Abeokuta','Ijebu-Ode'], Ondo: ['Akure','Ondo'], Osun: ['Osogbo','Ile-Ife'], Oyo: ['Ibadan','Ogbomosho'], Plateau: ['Jos','Bukuru'], Rivers: ['Port Harcourt','Bonny'], Sokoto: ['Sokoto'], Taraba: ['Jalingo'], Yobe: ['Damaturu'], Zamfara: ['Gusau'], FCT: ['Abuja','Gwagwalada','Kuje']
+} as const;
+
+export const NIGERIA_STATES = Object.keys(NIGERIA_LOCATIONS) as (keyof typeof NIGERIA_LOCATIONS)[];
