@@ -2,78 +2,74 @@ import { NextResponse } from 'next/server';
 
 export const revalidate = 86400;
 
-const SOURCE = 'OpenStreetMap · Overpass API';
+const SOURCE = 'Public Nigerian directories + OpenStreetMap';
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
-
-function clean(value: unknown) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim();
+const CITIES: Array<[string, string, string]> = [
+  ['lagos', 'Lagos', 'Lagos'], ['abuja', 'Abuja', 'Federal Capital Territory'], ['port-harcourt', 'Port Harcourt', 'Rivers'],
+  ['ibadan', 'Ibadan', 'Oyo'], ['kano', 'Kano', 'Kano'], ['benin-city', 'Benin City', 'Edo'], ['kaduna', 'Kaduna', 'Kaduna'],
+  ['jos', 'Jos', 'Plateau'], ['enugu', 'Enugu', 'Enugu'], ['owerri', 'Owerri', 'Imo'], ['ilorin', 'Ilorin', 'Kwara'],
+  ['akure', 'Akure', 'Ondo'], ['calabar', 'Calabar', 'Cross River'], ['uyo', 'Uyo', 'Akwa Ibom'], ['maiduguri', 'Maiduguri', 'Borno'],
+  ['abeokuta', 'Abeokuta', 'Ogun'], ['asaba', 'Asaba', 'Delta'], ['awka', 'Awka', 'Anambra']
+];
+const PHONE = /(?:\+?234[\s-]?(?:\(?\d{1,4}\)?[\s-]?){2,6}|0\d{3}[\s-]?\d{3}[\s-]?\d{4}|0\d{1,3}[\s-]?\d{5,8})/i;
+const BAD = /^(travel agencies|travel agency|airline ticketing agencies|car hire services|hotel reservations and bookings|tour operators|travel management|visa consulting agencies|previous|next|more info|write a review|see also|travel services|nigeria travel agencies)$/i;
+function clean(v: unknown) { return String(v ?? '').replace(/\s+/g, ' ').trim(); }
+function city(tags: any, fallback = '') { return clean(tags['addr:city'] || tags['addr:town'] || tags['addr:municipality'] || tags['is_in:city'] || fallback); }
+function state(tags: any, fallback = 'Nigeria') { return clean(tags['addr:state'] || tags['is_in:state'] || fallback); }
+function overpassQuery() { return `[out:json][timeout:120];area["ISO3166-1"="NG"][admin_level=2]->.ng;(nwr["tourism"="travel_agency"](area.ng);nwr["shop"="travel_agency"](area.ng);nwr["office"="travel_agency"](area.ng);nwr["amenity"="travel_agency"](area.ng););out center tags;`; }
+function parseDirectory(text: string, sourceUrl: string, source: string, fallbackCity = '', fallbackState = 'Nigeria') {
+  const out: any[] = [];
+  const normalized = text.replace(/\r/g, ' ').replace(/\n+/g, '\n');
+  const blocks = [...normalized.matchAll(/(?:^|\n)\s*(?:#{1,6}\s*)?(\d+)\s*([\s\S]*?)(?=\n\s*(?:#{1,6}\s*)?\d+\s+|$)/g)].map(m => m[2]);
+  for (const raw of blocks) {
+    const block = clean(raw).replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+    const cut = block.search(/\b(?:Image|Suite|No\.?|Plot|Block|Shop|Road)\b/i);
+    let name = clean(cut > 0 ? block.slice(0, cut) : block.slice(0, 150));
+    name = name.replace(/\s+(?:Image|More info|Write a Review).*$/i, '').trim();
+    if (!name || name.length < 3 || name.length > 140 || BAD.test(name)) continue;
+    const phone = clean(block.match(PHONE)?.[0]);
+    if (!phone && !/travel|tour|visa|ticket|booking|holiday|tourism/i.test(block)) continue;
+    const phonePos = phone ? block.indexOf(phone) : -1;
+    const tail = phonePos > 0 ? block.slice(cut > 0 ? cut : name.length, phonePos) : '';
+    const address = clean(tail).replace(/\bImage\b/gi, '').slice(0, 350);
+    out.push({ name, city: fallbackCity, state: fallbackState, address: address || undefined, phone: phone || undefined, services: ['Travel agency'], source, verification: 'DIRECTORY LISTED', sourceUrl });
+  }
+  return out;
 }
 
-function escapeOverpass(value: string) {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
-function stateFromTags(tags: Record<string, string>) {
-  return clean(tags['addr:state'] || tags['is_in:state'] || 'Nigeria');
-}
-
-function cityFromTags(tags: Record<string, string>) {
-  return clean(tags['addr:city'] || tags['addr:town'] || tags['addr:municipality'] || tags['is_in:city'] || '');
-}
-
-function buildQuery() {
-  return `[out:json][timeout:120];area["ISO3166-1"="NG"][admin_level=2]->.ng;(nwr["tourism"="travel_agency"](area.ng);nwr["shop"="travel_agency"](area.ng);nwr["office"="travel_agency"](area.ng);nwr["amenity"="travel_agency"](area.ng););out center tags;`;
+async function fetchReader(url: string, source: string, cityName = '', stateName = '') {
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, { headers: { 'User-Agent': 'AgencyFinder public directory indexer' }, next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    return parseDirectory(await res.text(), url, source, cityName, stateName);
+  } catch { return []; }
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limit = Math.min(4000, Math.max(100, Number(searchParams.get('limit') || 1600)));
-  try {
-    const res = await fetch(OVERPASS, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'AgencyFinder/1.0 public OSM indexer' },
-      body: `data=${encodeURIComponent(buildQuery())}`,
-      next: { revalidate: 86400 },
-    });
-    if (!res.ok) {
-      return NextResponse.json({ source: SOURCE, count: 0, error: `Overpass HTTP ${res.status}`, agencies: [] }, { status: 200 });
-    }
-    const data = await res.json();
-    const seen = new Set<string>();
-    const agencies = (data.elements || []).map((element: any) => {
-      const tags = element.tags || {};
-      const lat = element.lat ?? element.center?.lat;
-      const lon = element.lon ?? element.center?.lon;
-      const name = clean(tags.name || tags['name:en']);
-      const city = cityFromTags(tags);
-      const state = stateFromTags(tags);
-      const phone = clean(tags.phone || tags['contact:phone'] || tags['contact:mobile']);
-      const address = clean([tags['addr:housenumber'], tags['addr:street'], tags['addr:suburb'], city, state].filter(Boolean).join(', '));
-      return {
-        id: `osm-${element.type}-${element.id}`,
-        name,
-        city,
-        state,
-        address: address || undefined,
-        phone: phone || undefined,
-        email: clean(tags.email || tags['contact:email']) || undefined,
-        website: clean(tags.website || tags['contact:website']) || undefined,
-        latitude: lat,
-        longitude: lon,
-        services: ['Travel agency'],
-        source: SOURCE,
-        verification: 'OPENSTREETMAP LISTED',
-        sourceUrl: `https://www.openstreetmap.org/${element.type}/${element.id}`,
-      };
-    }).filter((x: any) => {
-      if (!x.name) return false;
-      const key = `${x.name}|${x.city}|${x.state}|${x.phone || ''}`.toLowerCase().replace(/[^a-z0-9|]+/g, '');
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).slice(0, limit);
-    return NextResponse.json({ source: SOURCE, sourceCountClaim: agencies.length, fetchedPages: 1, count: agencies.length, agencies });
-  } catch (error) {
-    return NextResponse.json({ source: SOURCE, count: 0, error: error instanceof Error ? error.message : 'Overpass request failed', agencies: [] }, { status: 200 });
-  }
+  const jobs = CITIES.flatMap(([slug, cityName, stateName]) => Array.from({ length: 6 }, (_, i) => {
+    const page = i + 1;
+    return [`https://www.finelib.com/cities/${slug}/travel/travel-agencies${page > 1 ? `/page-${page}` : ''}`, 'Finelib Nigeria · Travel Agencies directory', cityName, stateName] as const;
+  }));
+  // BusinessList advertises 1,528 Nigerian travel-agent listings; crawl a broad public index through the reader proxy.
+  const businessJobs = Array.from({ length: 60 }, (_, i) => {
+    const page = i + 1;
+    return [`https://www.businesslist.com.ng/category/travel-agents${page > 1 ? `/page/${page}` : ''}`, 'BusinessList Nigeria · Travel Agents directory', '', 'Nigeria'] as const;
+  });
+  const [osm, ...directoryGroups] = await Promise.all([
+    fetch(OVERPASS, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'AgencyFinder/1.0 public OSM indexer' }, body: `data=${encodeURIComponent(overpassQuery())}`, next: { revalidate: 86400 } }).then(async r => r.ok ? r.json() : { elements: [] }).catch(() => ({ elements: [] })),
+    ...[...jobs, ...businessJobs].map(([url, source, c, s]) => fetchReader(url, source, c, s))
+  ]);
+  const osmRecords = (osm.elements || []).map((e: any) => {
+    const t = e.tags || {}; const lat = e.lat ?? e.center?.lat; const lon = e.lon ?? e.center?.lon;
+    const name = clean(t.name || t['name:en']); const c = city(t); const st = state(t);
+    return { id: `osm-${e.type}-${e.id}`, name, city: c, state: st, address: clean([t['addr:housenumber'], t['addr:street'], t['addr:suburb'], c, st].filter(Boolean).join(', ')) || undefined, phone: clean(t.phone || t['contact:phone'] || t['contact:mobile']) || undefined, email: clean(t.email || t['contact:email']) || undefined, website: clean(t.website || t['contact:website']) || undefined, latitude: lat, longitude: lon, services: ['Travel agency'], source: 'OpenStreetMap · Overpass API', verification: 'OPENSTREETMAP LISTED', sourceUrl: `https://www.openstreetmap.org/${e.type}/${e.id}` };
+  }).filter((x: any) => x.name);
+  const seen = new Set<string>();
+  const agencies = [...osmRecords, ...directoryGroups.flat()].filter((x: any) => {
+    const key = `${clean(x.name)}|${clean(x.city)}|${clean(x.state)}|${clean(x.phone)}`.toLowerCase().replace(/[^a-z0-9|]+/g, '');
+    if (!x.name || seen.has(key)) return false; seen.add(key); return true;
+  }).slice(0, limit).map((x: any, i: number) => ({ ...x, id: x.id || `dir-${i}-${clean(x.name).toLowerCase().replace(/[^a-z0-9]+/g, '-')}` }));
+  return NextResponse.json({ source: SOURCE, sourceCountClaim: agencies.length, fetchedPages: jobs.length + businessJobs.length + 1, count: agencies.length, agencies });
 }
