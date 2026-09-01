@@ -1,0 +1,3 @@
+export type AgencyRecord = { id:string; name:string; city:string; state:string; phone:string; website?:string; services:string[]; rating:number; reviews:number; verified:boolean; score:number; status:string; source:string; lastChecked:string };
+export interface AgencyDatabase { list(filters?:{state?:string;city?:string}):Promise<AgencyRecord[]>; upsertMany(rows:AgencyRecord[]):Promise<void>; update(id:string, patch:Partial<AgencyRecord>):Promise<void>; }
+export function assertDatabaseConfigured(){ return Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SUPABASE_URL); }
