@@ -7,11 +7,12 @@ const CITIES: Array<[string,string,string]> = [
   ['lagos','Lagos','Lagos'],['abuja','Abuja','Federal Capital Territory'],['port-harcourt','Port Harcourt','Rivers'],['ibadan','Ibadan','Oyo'],['kano','Kano','Kano'],['benin-city','Benin City','Edo'],['kaduna','Kaduna','Kaduna'],['jos','Jos','Plateau'],['enugu','Enugu','Enugu'],['owerri','Owerri','Imo'],['ilorin','Ilorin','Kwara'],['akure','Akure','Ondo'],['calabar','Calabar','Cross River'],['uyo','Uyo','Akwa Ibom'],['maiduguri','Maiduguri','Borno'],['abeokuta','Abeokuta','Ogun'],['asaba','Asaba','Delta'],['awka','Awka','Anambra']
 ];
 const PHONE=/(?:\+?234[\s-]?(?:\(?\d{1,4}\)?[\s-]?){2,6}|0\d{3}[\s-]?\d{3}[\s-]?\d{4}|0\d{1,3}[\s-]?\d{5,8})/i;
-const BAD=/^(travel agencies|travel agency|airline ticketing agencies|car hire services|hotel reservations and bookings|tour operators|travel management|visa consulting agencies|previous|next|more info|write a review|see also|travel services|nigeria travel agencies|photos|reviews|title:|url source:)/i;
-const NON_AGENCY=/(?:driving school|school of motoring|bus stop|auto services|car wash|transport company|courier|logistics\s+only|primary school)/i;
+const BAD=/^(travel agencies|travel agency|airline ticketing agencies|car hire services|hotel reservations and bookings|tour operators|travel management|visa consulting agencies|previous|next|more info|write a review|see also|travel services|nigeria travel agencies|photos|reviews|title:|url source:|directory|home|contact)$/i;
+const NON_AGENCY=/(?:driving school|school of motoring|bus stop|auto services|car wash|transport company|courier|logistics\s+only|primary school|motor park|estate agent|real estate)/i;
 function clean(v:unknown){return String(v??'').replace(/\s+/g,' ').trim();}
 function city(t:any,f=''){return clean(t['addr:city']||t['addr:town']||t['addr:municipality']||t['is_in:city']||f)}
 function state(t:any,f='Nigeria'){return clean(t['addr:state']||t['is_in:state']||f)}
+function normalizeName(v:string){return clean(v).replace(/^[|•·\-:]+/,'').replace(/\s*[|•·]+\s*$/,'').replace(/\b(?:verified|sponsored)\b/gi,'').replace(/\s+/g,' ').trim();}
 function overpassQuery(){return `[out:json][timeout:120];area["ISO3166-1"="NG"][admin_level=2]->.ng;(nwr["tourism"="travel_agency"](area.ng);nwr["shop"="travel_agency"](area.ng);nwr["office"="travel_agency"](area.ng);nwr["amenity"="travel_agency"](area.ng););out center tags;`}
 function parseDirectory(text:string,url:string,source:string,fallbackCity='',fallbackState='Nigeria'){
  const out:any[]=[]; const normalized=text.replace(/\r/g,'').replace(/\u00a0/g,' ');
@@ -24,12 +25,12 @@ function parseDirectory(text:string,url:string,source:string,fallbackCity='',fal
   const phonePos=phone?block.indexOf(phone):-1;
   let namePart=phonePos>0?block.slice(0,phonePos):block;
   namePart=namePart.replace(/\b(?:verified|sponsored|reviews?|photos?)\b.*$/i,'').trim();
-  const cutPatterns=[/\s+is\s+(?:a|an|located|your|one)\b/i,/\s+(?:provides|offers|offering|specializes|deals in|has been|was established)\b/i,/\s+(?:suite|plot|block|shop|address|road|street|avenue|crescent|close|way|plaza)\b/i,/\s+\d{1,5}[A-Za-z]?[, ]/i];
+  const cutPatterns=[/\s+is\s+(?:a|an|located|your|one)\b/i,/\s+(?:provides|offers|offering|specializes|deals in|has been|was established)\b/i,/\s+(?:suite|plot|block|shop|address|road|street|avenue|crescent|close|way|plaza)\b/i,/\s+\d{1,5}[A-Za-z]?[, ]/i,/\s+-\s+(?:Lagos|Abuja|Kano|Nigeria|Port Harcourt|Ibadan)\b/i];
   let cut=namePart.length; for(const p of cutPatterns){const m=namePart.search(p);if(m>2)cut=Math.min(cut,m)}
-  let name=clean(namePart.slice(0,Math.min(cut,140))).replace(/^\|\s*/,'').replace(/^[-:]+/,'').trim();
+  let name=normalizeName(namePart.slice(0,Math.min(cut,120)));
   name=name.replace(/^(?:review|more info|write a review|photos|sponsored|verified)\s*/i,'').trim();
   if(!name||name.length<3||name.length>120||BAD.test(name)||NON_AGENCY.test(name))continue;
-  if(/^(ik[o]?rodu|iwofe|osolo way|road|suite|plot|block|abuja fct|nigeria)$/i.test(name))continue;
+  if(/^(ik[o]?rodu|iwofe|osolo way|road|suite|plot|block|abuja fct|nigeria|lagos|abuja|kano)$/i.test(name))continue;
   const travelLike=/travel|tour|visa|ticket|booking|holiday|tourism|airline|vacation/i.test(block);
   if(!phone&&!travelLike)continue;
   const tail=phonePos>name.length?block.slice(name.length,phonePos):'';
@@ -48,8 +49,8 @@ export async function GET(request:Request){
  const goAfricaJobs=Array.from({length:104},(_,i)=>{const p=i+1;return [`https://www.goafricaonline.com/ng/directory/travel-agencies${p>1?`?p=${p}`:''}`,'Go Africa Online · Travel Agencies directory','','Nigeria'] as const});
  const osmPromise=fetch(OVERPASS,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','User-Agent':'AgencyFinder/1.0 public OSM indexer'},body:`data=${encodeURIComponent(overpassQuery())}`,next:{revalidate:86400}}).then(async r=>r.ok?r.json():{elements:[]}).catch(()=>({elements:[]}));
  const groups=await batched([...jobs,...businessJobs,...branchesJobs,...goAfricaJobs],8,([u,s,c,st])=>fetchReader(u,s,c,st));
- const osm=await osmPromise; const osmRecords=(osm.elements||[]).map((e:any)=>{const t=e.tags||{};const name=clean(t.name||t['name:en']);const lat=e.lat??e.center?.lat,lon=e.lon??e.center?.lon,c=city(t),st=state(t);return{id:`osm-${e.type}-${e.id}`,name,city:c,state:st,address:clean([t['addr:housenumber'],t['addr:street'],t['addr:suburb'],c,st].filter(Boolean).join(', '))||undefined,phone:clean(t.phone||t['contact:phone']||t['contact:mobile'])||undefined,email:clean(t.email||t['contact:email'])||undefined,website:clean(t.website||t['contact:website'])||undefined,latitude:lat,longitude:lon,services:['Travel agency'],source:'OpenStreetMap · Overpass API',verification:'OPENSTREETMAP LISTED',sourceUrl:`https://www.openstreetmap.org/${e.type}/${e.id}`}}).filter((x:any)=>x.name&&!NON_AGENCY.test(x.name)&&!/helipad|airport operations|bus transport/i.test(x.name));
- const seen=new Map<string,any>(); for(const x of [...osmRecords,...groups.flat()]){x.name=clean(x.name).replace(/^(?:reviews|photos|sponsored|verified|\|)+/i,'').trim();if(!x.name||x.name.length<3||BAD.test(x.name)||NON_AGENCY.test(x.name)||/^(ik[o]?rodu|iwofe|osolo way|reviews|photos)$/i.test(x.name))continue;const key=`${x.name}|${x.city}|${x.state}|${x.phone}`.toLowerCase().replace(/[^a-z0-9|]+/g,'');if(!seen.has(key))seen.set(key,x)}
+ const osm=await osmPromise; const osmRecords=(osm.elements||[]).map((e:any)=>{const t=e.tags||{};const name=normalizeName(t.name||t['name:en']);const lat=e.lat??e.center?.lat,lon=e.lon??e.center?.lon,c=city(t),st=state(t);return{id:`osm-${e.type}-${e.id}`,name,city:c,state:st,address:clean([t['addr:housenumber'],t['addr:street'],t['addr:suburb'],c,st].filter(Boolean).join(', '))||undefined,phone:clean(t.phone||t['contact:phone']||t['contact:mobile'])||undefined,email:clean(t.email||t['contact:email'])||undefined,website:clean(t.website||t['contact:website'])||undefined,latitude:lat,longitude:lon,services:['Travel agency'],source:'OpenStreetMap · Overpass API',verification:'OPENSTREETMAP LISTED',sourceUrl:`https://www.openstreetmap.org/${e.type}/${e.id}`}}).filter((x:any)=>x.name&&!NON_AGENCY.test(x.name)&&!/helipad|airport operations|bus transport/i.test(x.name));
+ const seen=new Map<string,any>(); for(const x of [...osmRecords,...groups.flat()]){x.name=normalizeName(x.name);if(!x.name||x.name.length<3||BAD.test(x.name)||NON_AGENCY.test(x.name))continue;const nameKey=x.name.toLowerCase().replace(/[^a-z0-9]+/g,'');const phoneKey=clean(x.phone).replace(/\D/g,'');const locationKey=`${clean(x.city)}|${clean(x.state)}`.toLowerCase().replace(/[^a-z0-9|]+/g,'');const key=phoneKey?`phone|${phoneKey}`:`name|${nameKey}|${locationKey}`;if(!seen.has(key))seen.set(key,x)}
  const agencies=[...seen.values()].slice(0,limit).map((x:any,i:number)=>({...x,id:x.id||`dir-${i}-${clean(x.name).toLowerCase().replace(/[^a-z0-9]+/g,'-')}`}));
  return NextResponse.json({source:SOURCE,sourceCountClaim:agencies.length,fetchedPages:jobs.length+businessJobs.length+branchesJobs.length+goAfricaJobs.length+1,count:agencies.length,agencies});
 }
