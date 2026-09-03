@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "country": "Nigeria",
+  "description": "Structured agency dataset registry for Agency Finder. Records are imported from source-backed public listings; missing fields remain empty.",
+  "records": []
+}
