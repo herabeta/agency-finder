@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
+import { ABUJA_EMBASSIES } from '../../../data/abuja-embassies';
 
 export const revalidate = 86400;
-const SOURCE = 'Public Nigerian directories + OpenStreetMap';
+const SOURCE = 'Public Nigerian directories + OpenStreetMap + Abuja diplomatic missions';
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const ABUJA_DISTRICTS: Array<[string,string]> = [['wuse','Wuse'],['gwarinpa','Gwarinpa'],['maitama','Maitama'],['jabi','Jabi'],['asokoro','Asokoro'],['garki','Garki'],['central-business-district','Central Business District']];
 const PHONE=/(?:\+?234[\s-]?(?:\(?\d{1,4}\)?[\s-]?){2,6}|0\d{3}[\s-]?\d{3}[\s-]?\d{4}|0\d{1,3}[\s-]?\d{5,8})/gi;
@@ -48,7 +49,8 @@ export async function GET(request:Request){
  const osmPromise=fetch(OVERPASS,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','User-Agent':'AgencyFinder/1.0 public OSM indexer'},body:`data=${encodeURIComponent(`[out:json][timeout:60];area["ISO3166-1"="NG"][admin_level=2]->.ng;nwr["tourism"="travel_agency"](area.ng);out center tags;`)}`,next:{revalidate:86400},signal:AbortSignal.timeout(12000)}).then(async r=>r.ok?r.json():{elements:[]}).catch(()=>({elements:[]}));
  const groups=(await Promise.all(jobs.map(([u,s,c,st])=>fetchReader(u,s,c,st)))).flat(); const osm=await osmPromise;
  const osmRecords=(osm.elements||[]).map((e:any)=>{const t=e.tags||{};const name=normalizeName(t.name||t['name:en']);return{id:`osm-${e.type}-${e.id}`,name,city:clean(t['addr:city']||t['addr:town']||'Abuja'),state:clean(t['addr:state']||'Federal Capital Territory'),address:clean([t['addr:housenumber'],t['addr:street'],t['addr:suburb'],'Abuja'].filter(Boolean).join(', '))||undefined,phone:clean(t.phone||t['contact:phone']||t['contact:mobile'])||undefined,email:clean(t.email||t['contact:email'])||undefined,website:clean(t.website||t['contact:website'])||undefined,services:['Travel agency'],source:'OpenStreetMap · Overpass API',verification:'OPENSTREETMAP LISTED',sourceUrl:`https://www.openstreetmap.org/${e.type}/${e.id}`}}).filter((x:any)=>!invalidName(x.name));
- const seen=new Map<string,any>();for(const x of [...osmRecords,...groups]){x.name=normalizeName(x.name);if(invalidName(x.name))continue;const nameKey=x.name.toLowerCase().replace(/[^a-z0-9]+/g,'');const phoneKey=clean(x.phone).replace(/\D/g,'');const locationKey=`${clean(x.city)}|${clean(x.state)}`.toLowerCase().replace(/[^a-z0-9|]+/g,'');const key=phoneKey?`phone|${phoneKey}`:`name|${nameKey}|${locationKey}`;if(!seen.has(key))seen.set(key,x)}
+ const embassyRecords=ABUJA_EMBASSIES.map(x=>({...x}));
+ const seen=new Map<string,any>();for(const x of [...osmRecords,...groups,...embassyRecords]){x.name=normalizeName(x.name);if(invalidName(x.name))continue;const nameKey=x.name.toLowerCase().replace(/[^a-z0-9]+/g,'');const phoneKey=clean(x.phone).replace(/\D/g,'');const locationKey=`${clean(x.city)}|${clean(x.state)}`.toLowerCase().replace(/[^a-z0-9|]+/g,'');const key=phoneKey?`phone|${phoneKey}`:`name|${nameKey}|${locationKey}`;if(!seen.has(key))seen.set(key,x)}
  const agencies=[...seen.values()].slice(0,limit).map((x:any,i:number)=>({...x,id:x.id||`abuja-${i}-${clean(x.name).toLowerCase().replace(/[^a-z0-9]+/g,'-')}`}));
- return NextResponse.json({source:SOURCE,scope:'Abuja-first live directory index',sourceCountClaim:agencies.length,fetchedPages:jobs.length+1,count:agencies.length,agencies});
+ return NextResponse.json({source:SOURCE,scope:'Abuja-first live directory index · travel agencies + embassies/high commissions',sourceCountClaim:agencies.length,fetchedPages:jobs.length+1,count:agencies.length,agencies});
 }
