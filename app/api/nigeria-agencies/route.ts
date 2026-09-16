@@ -49,11 +49,15 @@ export async function GET(request:Request){
   ['https://www.finelib.com/travel/travel-agencies','Finelib Nigeria · National Travel Agencies','Nigeria','Nigeria'],
   ['https://www.finelib.com/travel/tour-operators','Finelib Nigeria · National Tour Operators','Nigeria','Nigeria'],
   ['https://www.finelib.com/travel/tourism','Finelib Nigeria · National Tourism Specialists','Nigeria','Nigeria'],
-  ...Array.from({length:9},(_,i)=>[`https://www.finelib.com/travel/travel-agencies/page-${i+2}`,'Finelib Nigeria · National Travel Agencies','Nigeria','Nigeria'] as const)
+  ...Array.from({length:19},(_,i)=>[`https://www.finelib.com/travel/travel-agencies/page-${i+2}`,'Finelib Nigeria · National Travel Agencies','Nigeria','Nigeria'] as const)
  ] as const;
  const businessJobs=Array.from({length:17},(_,i)=>{const p=i+1;return [p===1?'https://www.businesslist.com.ng/category/travel-agents/city%3Aabuja':`https://www.businesslist.com.ng/category/travel-agents/city%3Aabuja/page/${p}`,'BusinessList Nigeria · Abuja Travel Agents','Abuja','Federal Capital Territory'] as const});
- const businessNationalJobs=Array.from({length:20},(_,i)=>{const p=i+1;return [p===1?'https://www.businesslist.com.ng/category/travel-agents':`https://www.businesslist.com.ng/category/travel-agents?page=${p}`,'BusinessList Nigeria · National Travel Agents','Nigeria','Nigeria'] as const});
- const jobs=[...finelibJobs,...districtJobs,...businessJobs,...finelibNationalJobs,...businessNationalJobs];
+ const businessNationalJobs=Array.from({length:30},(_,i)=>{const p=i+1;return [p===1?'https://www.businesslist.com.ng/category/travel-agents':`https://www.businesslist.com.ng/category/travel-agents?page=${p}`,'BusinessList Nigeria · National Travel Agents','Nigeria','Nigeria'] as const});
+ const extraJobs=[
+  ['https://www.goafricaonline.com/ng/directory/travel-agencies','GoAfrica Online Nigeria · Travel Agencies','Nigeria','Nigeria'] as const,
+  ['https://content.wakanow.com/abuja-travel-centers','Wakanow · Abuja Travel Centers','Abuja','Federal Capital Territory'] as const
+ ];
+ const jobs=[...finelibJobs,...districtJobs,...businessJobs,...finelibNationalJobs,...businessNationalJobs,...extraJobs];
  const osmPromise=fetch(OVERPASS,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','User-Agent':'AgencyFinder/1.0 public OSM indexer'},body:`data=${encodeURIComponent(`[out:json][timeout:60];area["ISO3166-1"="NG"][admin_level=2]->.ng;nwr["tourism"="travel_agency"](area.ng);out center tags;`)}`,next:{revalidate:86400},signal:AbortSignal.timeout(12000)}).then(async r=>r.ok?r.json():{elements:[]}).catch(()=>({elements:[]}));
  const groups=(await Promise.all(jobs.map(([u,s,c,st])=>fetchReader(u,s,c,st)))).flat(); const osm=await osmPromise;
  const osmRecords=(osm.elements||[]).map((e:any)=>{const t=e.tags||{};const name=normalizeName(t.name||t['name:en']);return{id:`osm-${e.type}-${e.id}`,name,city:clean(t['addr:city']||t['addr:town']||''),state:clean(t['addr:state']||''),address:clean([t['addr:housenumber'],t['addr:street'],t['addr:suburb'],t['addr:city']||t['addr:town']].filter(Boolean).join(', '))||undefined,phone:clean(t.phone||t['contact:phone']||t['contact:mobile'])||undefined,email:clean(t.email||t['contact:email'])||undefined,website:clean(t.website||t['contact:website'])||undefined,services:['Travel agency'],source:'OpenStreetMap · Overpass API',verification:'OPENSTREETMAP LISTED',sourceUrl:`https://www.openstreetmap.org/${e.type}/${e.id}`}}).filter((x:any)=>!invalidName(x.name));
