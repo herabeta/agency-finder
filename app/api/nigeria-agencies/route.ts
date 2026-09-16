@@ -6,14 +6,14 @@ const SOURCE = 'Public Nigerian directories + OpenStreetMap + Abuja diplomatic m
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const ABUJA_DISTRICTS: Array<[string,string]> = [['wuse','Wuse'],['gwarinpa','Gwarinpa'],['maitama','Maitama'],['jabi','Jabi'],['asokoro','Asokoro'],['garki','Garki'],['central-business-district','Central Business District']];
 const PHONE=/(?:\+?234[\s-]?(?:\(?\d{1,4}\)?[\s-]?){2,6}|0\d{3}[\s-]?\d{3}[\s-]?\d{4}|0\d{1,3}[\s-]?\d{5,8})/gi;
-const BAD=/^(?:!\s*)?(?:image(?:\s*\d+)?|img(?:\s*\d+)?|markdown content.*|title:.*|url source:.*|travel agencies|travel agency|travel agents|compare travel agencies|download travel guides|travel guides.*|travel agencies.*services|travel & transportation|visa(?: & immigration)?|tourism|tourist(?: destinations)?|tourist|previous|next|more info|write a review|see also|travel services|nigeria travel agencies|photos|reviews|directory|home|contact)$/i;
+const BAD=/^(?:!\s*)?(?:image(?:\s*\d+)?|img(?:\s*\d+)?|markdown content.*|title:.*|url source:.*|travel|travels|travel agencies|travel agency|travel agents|compare travel agencies|download travel guides|travel guides.*|travel agencies.*services|travel & transportation|visa(?: & immigration)?|tourism|tourist(?: destinations)?|tourist|previous|next|more info|write a review|see also|travel services|nigeria travel agencies|photos|reviews|directory|home|contact)$/i;
 const NON_AGENCY=/(?:driving school|school of motoring|bus stop|auto services|car wash|transport company|courier|logistics\s+only|primary school|motor park|estate agent|real estate|pension limited)/i;
 const DESCRIPTION=/^(?:we are|your |comprehensive |expert |simplifying |helping you |affordable |exciting |travel and tour services|travel company in nigeria|canada visa|easy canada|trusted |one-stop|premium pension|premium )/i;
-const SENTENCE=/\b(?:is|are|provide|provides|offers|offer|includes|helps|strives|focused|situated|featuring|specializes|specialise|was established|has been)\b/i;
+const SENTENCE=/\b(?:is|are|provide|provides|offers|offer|includes|helps|strives|focused|situated|featuring|specializes|specialise|was established|has been|for flight bookings|for car rentals|for visa assistance|for study abroad|car rentals|visa assistance|study abroad)\b/i;
 const DIRECTORY_NAV=/\b(?:abuja\s+lagos\d+|kano\d+|ibadan\d+|kaduna\d+|port harcourt\d+|benin city\d+|maiduguri\d+|zaria\d+|jos\d+)\b/i;
 function clean(v:unknown){return String(v??'').replace(/\s+/g,' ').trim();}
 function normalizeName(v:string){return clean(v).replace(/^\d+\s*\|\s*/,'').replace(/^[|•·\-:]+/,'').replace(/\s*[|•·]+\s*$/,'').replace(/\b(?:verified|sponsored)\b/gi,'').replace(/\s+/g,' ').trim();}
-function invalidName(name:string){const n=normalizeName(name);return !n||n.length<3||n.length>100||BAD.test(n)||NON_AGENCY.test(n)||DIRECTORY_NAV.test(n)||SENTENCE.test(n)||/^!?(?:image|img)\s*\d*$/i.test(n)||DESCRIPTION.test(n)||/^\+?234(?:\s*\(?0\)?)?\s*$/i.test(n)||/^\+?[0-9().\s-]+$/.test(n);}
+function invalidName(name:string){const n=normalizeName(name);return !n||n.length<3||n.length>80||BAD.test(n)||NON_AGENCY.test(n)||DIRECTORY_NAV.test(n)||SENTENCE.test(n)||/^!?(?:image|img)\s*\d*$/i.test(n)||DESCRIPTION.test(n)||/^\+?234(?:\s*\(?0\)?)?\s*$/i.test(n)||/^\+?[0-9().\s-]+$/.test(n);}
 function firstLinkedName(text:string){
  const patterns=[/(?:^|\n)\s*\d+\s*\|?\s*\[([^\]]+)\]\(/i,/(?:^|\n)\s*\d+\s*\[([^\]]+)\]\(/i];
  for(const p of patterns){const m=text.match(p);if(m?.[1]){const n=normalizeName(m[1]);if(!invalidName(n))return n;}}
@@ -32,8 +32,7 @@ function parseDirectory(text:string,url:string,source:string,fallbackCity='Abuja
    let cut=namePart.length;for(const p of cuts){const m=namePart.search(p);if(m>2)cut=Math.min(cut,m)} name=normalizeName(namePart.slice(0,Math.min(cut,120)));
   }
   if(invalidName(name))continue;
-  const phoneMatches=block.match(PHONE)||[]; const phone=clean(phoneMatches[0]);
-  const travelLike=/travel|tour|visa|ticket|booking|holiday|tourism|airline|vacation/i.test(block); if(!phone&&!travelLike)continue;
+  const phoneMatches=block.match(PHONE)||[]; const phone=clean(phoneMatches[0]); const travelLike=/travel|tour|visa|ticket|booking|holiday|tourism|airline|vacation/i.test(block); if(!phone&&!travelLike)continue;
   const nameIndex=block.indexOf(name); const phoneIndex=phone?block.indexOf(phone,nameIndex+name.length):-1;
   const tail=phoneIndex>nameIndex?block.slice(nameIndex+name.length,phoneIndex):'';
   const address=clean(tail).replace(/\[([^\]]+)\]\([^)]*\)/g,'').replace(/\b(?:Image|Verified|Sponsored|Reviews?|Photos?|More info|Write a Review|Map|Website|View Profile|Send Enquiry)\b/gi,'').replace(/^\d+\s*\|\s*/,'').slice(0,350);
