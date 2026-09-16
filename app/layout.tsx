@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import PaginationClient from './pagination-client';
 
 export const metadata: Metadata = {
   title: 'Agency Finder — Nigeria',
@@ -8,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}<PaginationClient /></body></html>;
+  return <html lang="en"><body>{children}</body></html>;
 }
