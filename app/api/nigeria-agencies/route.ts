@@ -9,9 +9,11 @@ const PHONE=/(?:\+?234[\s-]?(?:\(?\d{1,4}\)?[\s-]?){2,6}|0\d{3}[\s-]?\d{3}[\s-]?
 const BAD=/^(?:!\s*)?(?:image(?:\s*\d+)?|img(?:\s*\d+)?|markdown content.*|title:.*|url source:.*|travel agencies|travel agency|travel agents|compare travel agencies|download travel guides|travel guides.*|travel agencies.*services|travel & transportation|visa(?: & immigration)?|tourism|tourist(?: destinations)?|tourist|previous|next|more info|write a review|see also|travel services|nigeria travel agencies|photos|reviews|directory|home|contact)$/i;
 const NON_AGENCY=/(?:driving school|school of motoring|bus stop|auto services|car wash|transport company|courier|logistics\s+only|primary school|motor park|estate agent|real estate|pension limited)/i;
 const DESCRIPTION=/^(?:we are|your |comprehensive |expert |simplifying |helping you |affordable |exciting |travel and tour services|travel company in nigeria|canada visa|easy canada|trusted |one-stop|premium pension|premium )/i;
+const SENTENCE=/\b(?:is|are|provide|provides|offers|offer|includes|helps|strives|focused|situated|featuring|specializes|specialise|was established|has been)\b/i;
+const DIRECTORY_NAV=/\b(?:abuja\s+lagos\d+|kano\d+|ibadan\d+|kaduna\d+|port harcourt\d+|benin city\d+|maiduguri\d+|zaria\d+|jos\d+)\b/i;
 function clean(v:unknown){return String(v??'').replace(/\s+/g,' ').trim();}
 function normalizeName(v:string){return clean(v).replace(/^\d+\s*\|\s*/,'').replace(/^[|•·\-:]+/,'').replace(/\s*[|•·]+\s*$/,'').replace(/\b(?:verified|sponsored)\b/gi,'').replace(/\s+/g,' ').trim();}
-function invalidName(name:string){const n=normalizeName(name);return !n||n.length<3||n.length>120||BAD.test(n)||NON_AGENCY.test(n)||/^!?(?:image|img)\s*\d*$/i.test(n)||DESCRIPTION.test(n)||/^\+?234(?:\s*\(?0\)?)?\s*$/i.test(n)||/^\+?[0-9().\s-]+$/.test(n);}
+function invalidName(name:string){const n=normalizeName(name);return !n||n.length<3||n.length>100||BAD.test(n)||NON_AGENCY.test(n)||DIRECTORY_NAV.test(n)||SENTENCE.test(n)||/^!?(?:image|img)\s*\d*$/i.test(n)||DESCRIPTION.test(n)||/^\+?234(?:\s*\(?0\)?)?\s*$/i.test(n)||/^\+?[0-9().\s-]+$/.test(n);}
 function firstLinkedName(text:string){
  const patterns=[/(?:^|\n)\s*\d+\s*\|?\s*\[([^\]]+)\]\(/i,/(?:^|\n)\s*\d+\s*\[([^\]]+)\]\(/i];
  for(const p of patterns){const m=text.match(p);if(m?.[1]){const n=normalizeName(m[1]);if(!invalidName(n))return n;}}
