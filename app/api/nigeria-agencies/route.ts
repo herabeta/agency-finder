@@ -6,6 +6,8 @@ const SOURCE = 'Public Nigerian directories + OpenStreetMap + Abuja diplomatic m
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const ABUJA_DISTRICTS: Array<[string,string]> = [['wuse','Wuse'],['gwarinpa','Gwarinpa'],['maitama','Maitama'],['jabi','Jabi'],['asokoro','Asokoro'],['garki','Garki'],['central-business-district','Central Business District']];
 const PHONE=/(?:\+?234[\s-]?(?:\(?\d{1,4}\)?[\s-]?){2,6}|0\d{3}[\s-]?\d{3}[\s-]?\d{4}|0\d{1,3}[\s-]?\d{5,8})/gi;
+const EMAIL=/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const WEBSITE=/(?:https?:\/\/|www\.)[^\s)<>]+/gi;
 const BAD=/^(?:!\s*)?(?:image(?:\s*\d+)?|img(?:\s*\d+)?|markdown content.*|title:.*|url source:.*|travel|travels|travel agencies|travel agency|travel agents|tour operators|compare travel agencies|download travel guides|travel guides.*|travel agencies.*services|travel & transportation|visa(?: & immigration)?|tourism|tourist(?: destinations)?|tourist|previous|next|more info|write a review|see also|travel services|nigeria travel agencies|photos|reviews?|directory|home|contact|profile|enlarge map|digital visibility|centralized quotations|instant messaging|customer|email and sms campaigns|online appointment booking|professional social network|showcase your products for sale|discover our other services.*|call our travel center|book walking tours|book vacation rentals|\!?image\s*\d*:\s*.*|(?:gsm|tel):.*|\+?234\s*\d{0,3}|\d{2,4}\s*[-()]?\d{2,4}\s*[-()]?\d{2,4})$/i;
 const NON_AGENCY=/(?:driving school|school of motoring|bus stop|auto services|car wash|transport company|courier|logistics\s+only|primary school|motor park|estate agent|real estate|pension limited|publisher network|federal ministry of tourism|tourism development corporation)/i;
 const DESCRIPTION=/^(?:we are|your |comprehensive |expert |simplifying |helping you |affordable |exciting |travel and tour services|travel company in nigeria|canada visa|easy canada|trusted |one-stop|premium pension|premium |global travel solutions:|tailored travel solutions:|exceptional global travel services:|visas, admissions, scholarships|travel agencies in nigeria:|top travel agencies in )/i;
@@ -32,15 +34,19 @@ function parseDirectory(text:string,url:string,source:string,fallbackCity='Abuja
    let cut=namePart.length;for(const p of cuts){const m=namePart.search(p);if(m>2)cut=Math.min(cut,m)} name=normalizeName(namePart.slice(0,Math.min(cut,120)));
   }
   if(invalidName(name))continue;
-  const phoneMatches=block.match(PHONE)||[]; const phone=clean(phoneMatches[0]); const travelLike=/travel|tour|visa|ticket|booking|holiday|tourism|airline|vacation/i.test(block); if(!phone&&!travelLike)continue;
+  const phoneMatches=block.match(PHONE)||[]; const phone=clean(phoneMatches[0]);
+  const email=clean((block.match(EMAIL)||[])[0]);
+  const website=clean((block.match(WEBSITE)||[])[0]);
+  const travelLike=/travel|tour|visa|ticket|booking|holiday|tourism|airline|vacation/i.test(block);
+  if(!phone&&!email&&!website&&!travelLike)continue;
   const nameIndex=block.indexOf(name); const phoneIndex=phone?block.indexOf(phone,nameIndex+name.length):-1;
   const tail=phoneIndex>nameIndex?block.slice(nameIndex+name.length,phoneIndex):'';
   const address=clean(tail).replace(/\[([^\]]+)\]\([^)]*\)/g,'').replace(/\b(?:Image|Verified|Sponsored|Reviews?|Photos?|More info|Write a Review|Map|Website|View Profile|Send Enquiry)\b/gi,'').replace(/^\d+\s*\|\s*/,'').slice(0,350);
-  out.push({name,city:fallbackCity,state:fallbackState,address:address||undefined,phone:phone||undefined,services:['Travel agency'],source,verification:'DIRECTORY LISTED',sourceUrl:url});
+  out.push({name,city:fallbackCity,state:fallbackState,address:address||undefined,phone:phone||undefined,email:email||undefined,website:website||undefined,services:['Travel agency'],source,verification:'DIRECTORY LISTED',sourceUrl:url});
  }
  return out;
 }
-async function fetchReader(url:string,source:string,c='Abuja',s='Federal Capital Territory'){try{const r=await fetch(`https://r.jina.ai/${url}`,{headers:{'User-Agent':'AgencyFinder public directory indexer'},next:{revalidate:86400},signal:AbortSignal.timeout(9000)});if(!r.ok)return[];return parseDirectory(await r.text(),url,source,c,s)}catch{return[]}}
+async function fetchReader(url:string,source:string,c='Abuja',s='Federal Capital Territory'){try{const r=await fetch(`https://r.jina.ai/${url}`,{headers:{'User-Agent':'AgencyFinder public directory indexer'},next:{revalidate:86400},signal:AbortSignal.timeout(8000)});if(!r.ok)return[];return parseDirectory(await r.text(),url,source,c,s)}catch{return[]}}
 export async function GET(request:Request){
  const {searchParams}=new URL(request.url); const limit=Math.min(4000,Math.max(100,Number(searchParams.get('limit')||4000)));
  const districtJobs=ABUJA_DISTRICTS.map(([slug,c])=>[`https://www.finelib.com/cities/abuja/abuja-cadastral-and-districts/${slug}/travel-agencies`,'Finelib Nigeria · Abuja district Travel Agencies',c,'Federal Capital Territory'] as const);
@@ -57,11 +63,13 @@ export async function GET(request:Request){
  const goAfricaTouristJobs=Array.from({length:5},(_,i)=>{const p=i+1;return [p===1?'https://www.goafricaonline.com/ng/directory/tourist-offices-country':`https://www.goafricaonline.com/ng/directory/tourist-offices-country?p=${p}`,'GoAfrica Online Nigeria · Tourist Offices','Nigeria','Nigeria'] as const});
  const extraJobs=[['https://content.wakanow.com/abuja-travel-centers','Wakanow · Abuja Travel Centers','Abuja','Federal Capital Territory'] as const];
  const jobs=[...finelibJobs,...districtJobs,...businessJobs,...finelibNationalJobs,...businessNationalJobs,...goAfricaTravelJobs,...goAfricaTouristJobs,...extraJobs];
- const osmPromise=fetch(OVERPASS,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','User-Agent':'AgencyFinder/1.0 public OSM indexer'},body:`data=${encodeURIComponent(`[out:json][timeout:60];area["ISO3166-1"="NG"][admin_level=2]->.ng;nwr["tourism"="travel_agency"](area.ng);out center tags;`)}`,next:{revalidate:86400},signal:AbortSignal.timeout(12000)}).then(async r=>r.ok?r.json():{elements:[]}).catch(()=>({elements:[]}));
- const groups=(await Promise.all(jobs.map(([u,s,c,st])=>fetchReader(u,s,c,st)))).flat(); const osm=await osmPromise;
+ const osmPromise=fetch(OVERPASS,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','User-Agent':'AgencyFinder/1.0 public OSM indexer'},body:`data=${encodeURIComponent(`[out:json][timeout:60];area["ISO3166-1"="NG"][admin_level=2]->.ng;(nwr["tourism"~"^(travel_agency|tour_operator)$"](area.ng);nwr["office"~"^(travel_agent|travel_agency)$"](area.ng);nwr["shop"~"^(travel_agency|travel)$"](area.ng););out center tags;`)}`,next:{revalidate:86400},signal:AbortSignal.timeout(12000)}).then(async r=>r.ok?r.json():{elements:[]}).catch(()=>({elements:[]}));
+ const groups=(await Promise.allSettled(jobs.map(([u,s,c,st])=>fetchReader(u,s,c,st)))).flatMap(x=>x.status==='fulfilled'?x.value:[]); const osm=await osmPromise;
  const osmRecords=(osm.elements||[]).map((e:any)=>{const t=e.tags||{};const name=normalizeName(t.name||t['name:en']);return{id:`osm-${e.type}-${e.id}`,name,city:clean(t['addr:city']||t['addr:town']||''),state:clean(t['addr:state']||''),address:clean([t['addr:housenumber'],t['addr:street'],t['addr:suburb'],t['addr:city']||t['addr:town']].filter(Boolean).join(', '))||undefined,phone:clean(t.phone||t['contact:phone']||t['contact:mobile'])||undefined,email:clean(t.email||t['contact:email'])||undefined,website:clean(t.website||t['contact:website'])||undefined,services:['Travel agency'],source:'OpenStreetMap · Overpass API',verification:'OPENSTREETMAP LISTED',sourceUrl:`https://www.openstreetmap.org/${e.type}/${e.id}`}}).filter((x:any)=>!invalidName(x.name));
  const embassyRecords=ABUJA_EMBASSIES.map(x=>({...x}));
- const seen=new Map<string,any>();for(const x of [...osmRecords,...groups,...embassyRecords]){x.name=normalizeName(x.name);if(invalidName(x.name))continue;const nameKey=x.name.toLowerCase().replace(/[^a-z0-9]+/g,'');const phoneKey=clean(x.phone).replace(/\D/g,'');const locationKey=`${clean(x.city)}|${clean(x.state)}`.toLowerCase().replace(/[^a-z0-9|]+/g,'');const key=phoneKey?`phone|${phoneKey}`:`name|${nameKey}|${locationKey}`;if(!seen.has(key))seen.set(key,x)}
+ const seen=new Map<string,any>();for(const x of [...osmRecords,...groups,...embassyRecords]){x.name=normalizeName(x.name);if(invalidName(x.name))continue;const nameKey=x.name.toLowerCase().replace(/[^a-z0-9]+/g,'');const phoneKey=clean(x.phone).replace(/\D/g,'');const emailKey=clean(x.email).toLowerCase();const locationKey=`${clean(x.city)}|${clean(x.state)}`.toLowerCase().replace(/[^a-z0-9|]+/g,'');const key=phoneKey?`phone|${phoneKey}`:emailKey?`email|${emailKey}`:`name|${nameKey}|${locationKey}`;if(!seen.has(key))seen.set(key,x)}
  const agencies=[...seen.values()].slice(0,limit).map((x:any,i:number)=>({...x,id:x.id||`ng-${i}-${clean(x.name).toLowerCase().replace(/[^a-z0-9]+/g,'-')}`}));
- return NextResponse.json({source:SOURCE,scope:'Nigeria-wide automatic public lead index · Abuja priority + national travel/tour leads + diplomatic missions',sourceCountClaim:agencies.length,fetchedPages:jobs.length+1,count:agencies.length,agencies});
+ const response=NextResponse.json({source:SOURCE,scope:'Nigeria-wide automatic public lead index · Abuja priority + national travel/tour leads + diplomatic missions',sourceCountClaim:agencies.length,fetchedPages:jobs.length+1,count:agencies.length,agencies});
+ response.headers.set('Cache-Control','public, s-maxage=86400, stale-while-revalidate=604800');
+ return response;
 }
